@@ -10,6 +10,7 @@ import {
   deleteReport as deleteReportFromDb,
 } from "./db";
 import { calculateDuration, EVENING_SHIFT_START } from "./shift-utils";
+import { log } from "console";
 
 // Type definitions
 export type Employee = {
@@ -182,73 +183,56 @@ function processAttendanceRecords(
         const yesterdayRecord = recordsByEmployeeAndDate.get(
           `${idEmployee}-${dateMinusOne}`
         );
-        console.log({
-          yesterdayRecord,
-          dateMinusOne,
-        });
+
+        console.log({ yesterdayRecord, dateMinusOne });
 
         if (yesterdayRecord && yesterdayRecord.length > 0) {
-          // Find the last record from yesterday with hour less than 8
-          const firstRecordOfYesterdayIndex = [...yesterdayRecord]
-            .sort(
-              (a, b) =>
-                new Date(a.timestamp).getTime() -
-                new Date(b.timestamp).getTime()
-            )
-            .reverse()
-            .findIndex((record) => {
-              const [hours] = record.time.split(":").map(Number);
-              return hours < 10;
-            });
-
-          if (firstRecordOfYesterdayIndex !== -1) {
-            // Get the first record of yesterday
-            const firstRecordOfYesterday: AttendanceRecord =
-              yesterdayRecord[firstRecordOfYesterdayIndex];
-            // Check if the hour is less than 8
-            const [hours, minutes, secondes] = firstRecordOfYesterday?.time
-              .split(":")
-              .map(Number);
-
-            yesterdayRecord.sort(
+          const yesterdayFirstRecord = yesterdayRecord[0];
+          const [yHours] = yesterdayFirstRecord.time.split(":").map(Number);
+          const isYesterdayIsLate = yHours >= 16; // Si l'arrivée est avant 8h
+          // Si le premier pointage d'hier est avant 16h, c'est un quart de nuit
+          if (isYesterdayIsLate) {
+            const sortedRecords = [...dayRecords].sort(
               (a, b) =>
                 new Date(a.timestamp).getTime() -
                 new Date(b.timestamp).getTime()
             );
 
-            let newFirstRecord: AttendanceRecord | undefined = undefined;
+            const recordBeforeTen = sortedRecords
+              .reverse() // Commencer par la fin pour trouver le dernier
+              .find((record) => {
+                const [hours] = record.time.split(":").map(Number);
+                return hours < 10;
+              });
 
-            yesterdayRecord.forEach((record) => {
-              if (newFirstRecord) return;
-              const [_hours, _minutes, _secondes] = record.time
-                .split(":")
-                .map(Number);
-              // convert hours, minutes, secondes to seconds
-              const yesterdayRecordSeconds =
-                hours * 3600 + minutes * 60 + secondes;
-              const currentRecordSeconds =
-                _hours * 3600 + _minutes * 60 + _secondes;
+            if (recordBeforeTen) {
+              const newFirstRecord = dayRecords
+                .sort(
+                  (a, b) =>
+                    new Date(a.timestamp).getTime() -
+                    new Date(b.timestamp).getTime()
+                )
+                .find((record) => {
+                  const recordTime = new Date(
+                    `1970-01-01 ${record.time}`
+                  ).getTime();
+                  const refTime = new Date(
+                    `1970-01-01 ${recordBeforeTen.time}`
+                  ).getTime();
+                  return recordTime > refTime;
+                });
 
-              if (currentRecordSeconds <= yesterdayRecordSeconds) return; // Skip record less than yesterdayRecord
-              console.log(
-                currentRecordSeconds <= yesterdayRecordSeconds,
-                "Skip"
-              );
+              if (newFirstRecord) {
+                console.log(
+                  {
+                    newFirstRecord,
+                  },
+                  "newww first record"
+                );
 
-              newFirstRecord = record;
-            });
-
-            console.log({
-              newFirstRecord,
-              firstRecordOfYesterday,
-              firstRecord,
-            });
-
-            firstRecord = newFirstRecord ?? firstRecord;
-            console.log({
-              firstRecord,
-              ll: "neww",
-            });
+                firstRecord = newFirstRecord;
+              }
+            }
           }
         }
       }

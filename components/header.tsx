@@ -36,7 +36,7 @@ export function Header() {
           >
             Reports
           </Link>
-          <Link
+          {/* <Link
             href="/dashboard"
             className={`text-sm font-medium transition-colors hover:text-primary ${
               pathname === "/dashboard"
@@ -45,7 +45,7 @@ export function Header() {
             }`}
           >
             Dashboard
-          </Link>
+          </Link> */}
         </nav>
 
         <div className="flex items-center gap-2">
