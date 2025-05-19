@@ -164,9 +164,7 @@ function processAttendanceRecords(
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
 
-      console.log({ dayRecords: JSON.stringify(dayRecords, null, 2) });
-
-      let firstRecord = dayRecords[0];
+      var firstRecord = dayRecords[0];
       let lastRecord = dayRecords[dayRecords.length - 1];
 
       // Déterminer si c'est un quart de soirée
@@ -181,71 +179,116 @@ function processAttendanceRecords(
         const dayMinusOneStr =
           dayMinusOne < 10 ? `0${dayMinusOne}` : dayMinusOne;
         const dateMinusOne = `${year}-${month}-${dayMinusOneStr}`;
-        const previousRecord = recordsByEmployeeAndDate.get(
+        const yesterdayRecord = recordsByEmployeeAndDate.get(
           `${idEmployee}-${dateMinusOne}`
         );
-        if (previousRecord && previousRecord.length > 0) {
-          let lastRecordLowerThant8h: AttendanceRecord | undefined = undefined;
-
-          console.log({ previousRecord });
-
-          previousRecord
-            .sort(
-              (a, b) =>
-                new Date(a.timestamp).getTime() -
-                new Date(b.timestamp).getTime()
-            )
-            .forEach((record) => {
-              const [hours, minutes] = record.time.split(":").map(Number);
-              if (hours > 10) {
-                lastRecordLowerThant8h = record;
-              }
-            });
-
-          console.log({ lastRecordLowerThant8h });
-
-          if (lastRecordLowerThant8h) {
-            firstRecord = lastRecordLowerThant8h;
-          }
-        }
-      }
-
-      const [arrivalHours2] = firstRecord?.time.split(":").map(Number) ?? [];
-      const isEveningShift = arrivalHours2 >= 18; // Si l'arrivée est après 18h
-      if (isEveningShift && firstRecord?.department === "OPERATION") {
-        const [idEmployee, year, month, day] = key.split("-");
-        const dayPlusOne = parseInt(day) + 1;
-        const dayPlusOneStr = dayPlusOne < 10 ? `0${dayPlusOne}` : dayPlusOne;
-        const datePlusOne = `${year}-${month}-${dayPlusOneStr}`;
-        const nextRecord = recordsByEmployeeAndDate.get(
-          `${idEmployee}-${datePlusOne}`
-        );
         console.log({
-          nextRecord: JSON.stringify(nextRecord, null, 2),
-          datePlusOne,
-          idEmployee,
+          yesterdayRecord,
+          dateMinusOne,
         });
-        if (nextRecord && nextRecord.length > 0) {
-          let firstLowThant8h: AttendanceRecord | undefined = undefined;
-          firstLowThant8h = nextRecord
+
+        if (yesterdayRecord && yesterdayRecord.length > 0) {
+          // Find the last record from yesterday with hour less than 8
+          const firstRecordOfYesterdayIndex = [...yesterdayRecord]
             .sort(
               (a, b) =>
                 new Date(a.timestamp).getTime() -
                 new Date(b.timestamp).getTime()
             )
-            .find((record) => {
+            .reverse()
+            .findIndex((record) => {
               const [hours] = record.time.split(":").map(Number);
               return hours < 10;
             });
 
+          if (firstRecordOfYesterdayIndex !== -1) {
+            // Get the first record of yesterday
+            const firstRecordOfYesterday: AttendanceRecord =
+              yesterdayRecord[firstRecordOfYesterdayIndex];
+            // Check if the hour is less than 8
+            const [hours, minutes, secondes] = firstRecordOfYesterday?.time
+              .split(":")
+              .map(Number);
+
+            yesterdayRecord.sort(
+              (a, b) =>
+                new Date(a.timestamp).getTime() -
+                new Date(b.timestamp).getTime()
+            );
+
+            let newFirstRecord: AttendanceRecord | undefined = undefined;
+
+            yesterdayRecord.forEach((record) => {
+              if (newFirstRecord) return;
+              const [_hours, _minutes, _secondes] = record.time
+                .split(":")
+                .map(Number);
+              // convert hours, minutes, secondes to seconds
+              const yesterdayRecordSeconds =
+                hours * 3600 + minutes * 60 + secondes;
+              const currentRecordSeconds =
+                _hours * 3600 + _minutes * 60 + _secondes;
+
+              if (currentRecordSeconds <= yesterdayRecordSeconds) return; // Skip record less than yesterdayRecord
+              console.log(
+                currentRecordSeconds <= yesterdayRecordSeconds,
+                "Skip"
+              );
+
+              newFirstRecord = record;
+            });
+
+            console.log({
+              newFirstRecord,
+              firstRecordOfYesterday,
+              firstRecord,
+            });
+
+            firstRecord = newFirstRecord ?? firstRecord;
+            console.log({
+              firstRecord,
+              ll: "neww",
+            });
+          }
+        }
+      }
+
+      const [arrivalHours2, arrivalMin2] =
+        firstRecord?.time.split(":").map(Number) ?? [];
+
+      const isEveningShift = arrivalHours2 >= 18; // Si l'arrivée est après 18h
+
+      if (isEveningShift && firstRecord?.department === "OPERATION") {
+        const [idEmployee, year, month, day] = key.split("-");
+
+        const dayPlusOne = parseInt(day) + 1;
+
+        const dayPlusOneStr = dayPlusOne < 10 ? `0${dayPlusOne}` : dayPlusOne;
+
+        const datePlusOne = `${year}-${month}-${dayPlusOneStr}`;
+
+        const nextRecord = recordsByEmployeeAndDate.get(
+          `${idEmployee}-${datePlusOne}`
+        );
+
+        if (nextRecord && nextRecord.length > 0) {
+          let firstLowThant8h: AttendanceRecord | undefined = undefined;
+
+          nextRecord.sort(
+            (a, b) =>
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+
+          firstLowThant8h = nextRecord.find((record) => {
+            const [hours] = record.time.split(":").map(Number);
+            return hours < 10;
+          });
+
           lastRecord = {
-            ...lastRecord,
+            ...(firstLowThant8h ?? lastRecord),
             time: firstLowThant8h ? firstLowThant8h.time : "-",
             timestamp: `${datePlusOne} ${firstLowThant8h?.time ?? "-"}`,
           };
-          console.log({
-            lastRecord: JSON.stringify(lastRecord, null, 2),
-          });
         }
       }
 
@@ -263,7 +306,7 @@ function processAttendanceRecords(
         date: firstRecord.date,
         arrivalTime: firstRecord.time,
         departureTime: lastRecord.time,
-        duration,
+        duration: duration === "NaNh NaNm" ? "Error" : duration,
         punchCount: dayRecords.length,
         othersPunch: dayRecords.map((record) => record.time),
       });
