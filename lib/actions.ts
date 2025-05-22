@@ -10,6 +10,7 @@ import {
   deleteReport as deleteReportFromDb,
 } from "./db";
 import { calculateDuration, EVENING_SHIFT_START } from "./shift-utils";
+import { log } from "console";
 
 // Type definitions
 export type Employee = {
@@ -164,9 +165,7 @@ function processAttendanceRecords(
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
 
-      console.log({ dayRecords: JSON.stringify(dayRecords, null, 2) });
-
-      let firstRecord = dayRecords[0];
+      var firstRecord = dayRecords[0];
       let lastRecord = dayRecords[dayRecords.length - 1];
 
       // Déterminer si c'est un quart de soirée
@@ -181,71 +180,99 @@ function processAttendanceRecords(
         const dayMinusOneStr =
           dayMinusOne < 10 ? `0${dayMinusOne}` : dayMinusOne;
         const dateMinusOne = `${year}-${month}-${dayMinusOneStr}`;
-        const previousRecord = recordsByEmployeeAndDate.get(
+        const yesterdayRecord = recordsByEmployeeAndDate.get(
           `${idEmployee}-${dateMinusOne}`
         );
-        if (previousRecord && previousRecord.length > 0) {
-          let lastRecordLowerThant8h: AttendanceRecord | undefined = undefined;
 
-          console.log({ previousRecord });
+        console.log({ yesterdayRecord, dateMinusOne });
 
-          previousRecord
-            .sort(
+        if (yesterdayRecord && yesterdayRecord.length > 0) {
+          const yesterdayFirstRecord = yesterdayRecord[0];
+          const [yHours] = yesterdayFirstRecord.time.split(":").map(Number);
+          const isYesterdayIsLate = yHours >= 16; // Si l'arrivée est avant 8h
+          // Si le premier pointage d'hier est avant 16h, c'est un quart de nuit
+          if (isYesterdayIsLate) {
+            const sortedRecords = [...dayRecords].sort(
               (a, b) =>
                 new Date(a.timestamp).getTime() -
                 new Date(b.timestamp).getTime()
-            )
-            .forEach((record) => {
-              const [hours, minutes] = record.time.split(":").map(Number);
-              if (hours > 10) {
-                lastRecordLowerThant8h = record;
+            );
+
+            const recordBeforeTen = sortedRecords
+              .reverse() // Commencer par la fin pour trouver le dernier
+              .find((record) => {
+                const [hours] = record.time.split(":").map(Number);
+                return hours < 10;
+              });
+
+            if (recordBeforeTen) {
+              const newFirstRecord = dayRecords
+                .sort(
+                  (a, b) =>
+                    new Date(a.timestamp).getTime() -
+                    new Date(b.timestamp).getTime()
+                )
+                .find((record) => {
+                  const recordTime = new Date(
+                    `1970-01-01 ${record.time}`
+                  ).getTime();
+                  const refTime = new Date(
+                    `1970-01-01 ${recordBeforeTen.time}`
+                  ).getTime();
+                  return recordTime > refTime;
+                });
+
+              if (newFirstRecord) {
+                console.log(
+                  {
+                    newFirstRecord,
+                  },
+                  "newww first record"
+                );
+
+                firstRecord = newFirstRecord;
               }
-            });
-
-          console.log({ lastRecordLowerThant8h });
-
-          if (lastRecordLowerThant8h) {
-            firstRecord = lastRecordLowerThant8h;
+            }
           }
         }
       }
 
-      const [arrivalHours2] = firstRecord?.time.split(":").map(Number) ?? [];
+      const [arrivalHours2, arrivalMin2] =
+        firstRecord?.time.split(":").map(Number) ?? [];
+
       const isEveningShift = arrivalHours2 >= 18; // Si l'arrivée est après 18h
+
       if (isEveningShift && firstRecord?.department === "OPERATION") {
         const [idEmployee, year, month, day] = key.split("-");
+
         const dayPlusOne = parseInt(day) + 1;
+
         const dayPlusOneStr = dayPlusOne < 10 ? `0${dayPlusOne}` : dayPlusOne;
+
         const datePlusOne = `${year}-${month}-${dayPlusOneStr}`;
+
         const nextRecord = recordsByEmployeeAndDate.get(
           `${idEmployee}-${datePlusOne}`
         );
-        console.log({
-          nextRecord: JSON.stringify(nextRecord, null, 2),
-          datePlusOne,
-          idEmployee,
-        });
+
         if (nextRecord && nextRecord.length > 0) {
           let firstLowThant8h: AttendanceRecord | undefined = undefined;
-          firstLowThant8h = nextRecord
-            .sort(
-              (a, b) =>
-                new Date(a.timestamp).getTime() -
-                new Date(b.timestamp).getTime()
-            )
-            .find((record) => {
-              const [hours] = record.time.split(":").map(Number);
-              return hours < 10;
-            });
+
+          nextRecord.sort(
+            (a, b) =>
+              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+
+          firstLowThant8h = nextRecord.find((record) => {
+            const [hours] = record.time.split(":").map(Number);
+            return hours < 10;
+          });
 
           lastRecord = {
-            ...lastRecord,
+            ...(firstLowThant8h ?? lastRecord),
             time: firstLowThant8h ? firstLowThant8h.time : "-",
             timestamp: `${datePlusOne} ${firstLowThant8h?.time ?? "-"}`,
           };
-          console.log({
-            lastRecord: JSON.stringify(lastRecord, null, 2),
-          });
         }
       }
 
@@ -263,7 +290,7 @@ function processAttendanceRecords(
         date: firstRecord.date,
         arrivalTime: firstRecord.time,
         departureTime: lastRecord.time,
-        duration,
+        duration: duration === "NaNh NaNm" ? "Error" : duration,
         punchCount: dayRecords.length,
         othersPunch: dayRecords.map((record) => record.time),
       });

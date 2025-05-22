@@ -37,6 +37,10 @@ export function calculateDuration(
     endDate = new Date(2000, 0, 2, endHours, endMinutes);
   }
 
+  if (!endTime) {
+    return "erreur";
+  }
+
   const durationMs = endDate.getTime() - startDate.getTime();
   const durationHours = Math.floor(durationMs / (1000 * 60 * 60));
   const durationMinutes = Math.floor(
