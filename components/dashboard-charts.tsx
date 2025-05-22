@@ -75,6 +75,7 @@ export function DashboardCharts({ records }: DashboardChartsProps) {
     early: { label: "Early", color: "#22c55e" },
     onTime: { label: "On Time", color: "#3b82f6" },
     late: { label: "Late", color: "#ef4444" },
+    department: { label: "Department", color: "#3b82f6" },
   };
 
   return (
@@ -119,7 +120,7 @@ export function DashboardCharts({ records }: DashboardChartsProps) {
                   outerRadius={100}
                   label={({ name, value }) => `${name}: ${value}`}
                 >
-                  {attendanceData.map((entry, index) => (
+                  {attendanceData.map((entry) => (
                     <Cell key={entry.name} fill={entry.color} />
                   ))}
                 </Pie>
@@ -140,7 +141,7 @@ export function DashboardCharts({ records }: DashboardChartsProps) {
         </CardHeader>
         <CardContent>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ChartContainer config={chartConfig}>
               <RechartsBarChart data={departmentData}>
                 <XAxis dataKey="name" />
                 <YAxis />
@@ -163,9 +164,9 @@ export function DashboardCharts({ records }: DashboardChartsProps) {
                     );
                   }}
                 />
-                <Bar dataKey="value" fill="#3b82f6" />
+                <Bar dataKey="value" fill={chartConfig.department.color} />
               </RechartsBarChart>
-            </ResponsiveContainer>
+            </ChartContainer>
           </div>
         </CardContent>
       </Card>
