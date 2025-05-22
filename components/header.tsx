@@ -3,11 +3,21 @@
 import Link from "next/link";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Button } from "@/components/ui/button";
-import { FileSpreadsheet, Home, BarChart } from "lucide-react";
+import {
+  FileSpreadsheet,
+  Home,
+  BarChart,
+  LogIn,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import { usePathname } from "next/navigation";
+import { UserButton, SignInButton, SignUpButton, useUser } from "@clerk/nextjs";
+import { WorkspaceNav } from "@/components/workspace-nav";
 
 export function Header() {
   const pathname = usePathname();
+  const { isSignedIn } = useUser();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/6 flex items-center justify-center">
@@ -50,6 +60,38 @@ export function Header() {
 
         <div className="flex items-center gap-2">
           <ModeToggle />
+
+          {isSignedIn ? (
+            <>
+              <WorkspaceNav />
+
+              <Button asChild>
+                <Link href="/dashboard">
+                  <BarChart className="mr-2 h-4 w-4" />
+                  Dashboard
+                </Link>
+              </Button>
+
+              <UserButton afterSignOutUrl="/" />
+            </>
+          ) : (
+            <>
+              <SignInButton mode="modal">
+                <Button variant="outline" size="sm">
+                  <LogIn className="mr-2 h-4 w-4" />
+                  Connexion
+                </Button>
+              </SignInButton>
+
+              <SignUpButton mode="modal">
+                <Button size="sm">
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Inscription
+                </Button>
+              </SignUpButton>
+            </>
+          )}
+
           <div className="block md:hidden">
             <Button variant="ghost" size="icon" asChild>
               <Link href="/">
