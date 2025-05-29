@@ -18,9 +18,10 @@ import { WorkspaceMembers } from "@/components/workspace-members";
 import { WorkspaceOwnershipTransfer } from "@/components/workspace-ownership-transfer";
 import {
   getWorkspaceById,
+  getWorkspaceMembers,
   getWorkspaceReports,
-  type Workspace,
-} from "@/lib/workspace-db";
+} from "@/lib/workspace-actions";
+import type { Workspace, WorkspaceMember } from "@/lib/workspace-db-core";
 
 interface WorkspacePageProps {
   params: {

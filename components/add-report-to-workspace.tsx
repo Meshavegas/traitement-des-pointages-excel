@@ -24,8 +24,8 @@ import { Share2 } from "lucide-react";
 import {
   getUserWorkspaces,
   addReportToWorkspace,
-  type Workspace,
-} from "@/lib/workspace-db";
+} from "@/lib/workspace-actions";
+import type { Workspace } from "@/lib/workspace-db-core";
 
 interface AddReportToWorkspaceProps {
   reportId: string;
@@ -54,7 +54,7 @@ export function AddReportToWorkspace({
 
     try {
       setIsLoading(true);
-      const userWorkspaces = await getUserWorkspaces(user.id);
+      const userWorkspaces = await getUserWorkspaces();
       setWorkspaces(userWorkspaces);
     } catch (error) {
       console.error("Erreur lors du chargement des espaces de travail:", error);

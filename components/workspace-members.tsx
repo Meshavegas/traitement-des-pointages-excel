@@ -43,9 +43,9 @@ import {
   inviteToWorkspace,
   updateMemberRole,
   removeMember,
-  type Workspace,
-  type WorkspaceMember,
-} from "@/lib/workspace-db";
+  transferOwnership,
+} from "@/lib/workspace-actions";
+import type { WorkspaceMember, Workspace } from "@/lib/workspace-db-core";
 
 interface WorkspaceMembersProps {
   workspace: Workspace;

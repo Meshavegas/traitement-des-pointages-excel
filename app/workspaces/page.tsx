@@ -29,8 +29,8 @@ import {
   getUserWorkspaces,
   createWorkspace,
   inviteToWorkspace,
-} from "@/lib/workspace-db";
-import type { Workspace } from "@/lib/workspace-db";
+} from "@/lib/workspace-actions";
+import type { Workspace } from "@/lib/workspace-db-core";
 
 export default function WorkspacesPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -50,7 +50,7 @@ export default function WorkspacesPage() {
 
     const loadWorkspaces = async () => {
       try {
-        const userWorkspaces = await getUserWorkspaces(user.id);
+        const userWorkspaces = await getUserWorkspaces();
         setWorkspaces(userWorkspaces);
       } catch (error) {
         console.error(
@@ -198,13 +198,13 @@ export default function WorkspacesPage() {
                   {workspace.ownerId === user.id ? "Vous" : "Autre utilisateur"}
                 </div>
               </CardContent>
-              <CardFooter className="flex justify-between">
+              <CardFooter className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => router.push(`/workspaces/${workspace.id}`)}
                 >
-                  Voir les rapports
+                  Ouvrir
                 </Button>
                 <Dialog>
                   <DialogTrigger asChild>
@@ -213,15 +213,16 @@ export default function WorkspacesPage() {
                       size="sm"
                       onClick={() => setSelectedWorkspace(workspace)}
                     >
-                      <Share2 className="mr-2 h-4 w-4" /> Partager
+                      <Share2 className="mr-2 h-4 w-4" />
+                      Inviter
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Inviter à {workspace.name}</DialogTitle>
+                      <DialogTitle>Inviter un utilisateur</DialogTitle>
                       <DialogDescription>
-                        Envoyez une invitation par email pour partager cet
-                        espace de travail.
+                        Invitez quelqu'un à rejoindre l'espace de travail "
+                        {selectedWorkspace?.name}".
                       </DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
@@ -235,13 +236,13 @@ export default function WorkspacesPage() {
                           value={inviteEmail}
                           onChange={(e) => setInviteEmail(e.target.value)}
                           className="col-span-3"
-                          placeholder="collegue@exemple.com"
+                          placeholder="utilisateur@exemple.com"
                         />
                       </div>
                     </div>
                     <DialogFooter>
                       <Button onClick={handleInviteUser} disabled={isInviting}>
-                        {isInviting ? "Envoi..." : "Inviter"}
+                        {isInviting ? "Envoi..." : "Envoyer l'invitation"}
                       </Button>
                     </DialogFooter>
                   </DialogContent>

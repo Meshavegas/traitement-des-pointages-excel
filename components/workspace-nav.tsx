@@ -19,7 +19,7 @@ import {
   getUserWorkspaces,
   getPendingInvitations,
 } from "@/lib/workspace-actions";
-import type { Workspace } from "@/lib/workspace-db";
+import type { Workspace } from "@/lib/workspace-db-core";
 
 export function WorkspaceNav() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -32,7 +32,7 @@ export function WorkspaceNav() {
 
     const loadWorkspaces = async () => {
       try {
-        const userWorkspaces = await getUserWorkspaces(user.id);
+        const userWorkspaces = await getUserWorkspaces();
         setWorkspaces(userWorkspaces);
       } catch (error) {
         console.error(
@@ -44,9 +44,7 @@ export function WorkspaceNav() {
 
     const loadInvitations = async () => {
       try {
-        const userInvitations = await getPendingInvitations(
-          user.emailAddresses[0].emailAddress
-        );
+        const userInvitations = await getPendingInvitations();
         setInvitationCount(userInvitations.length);
       } catch (error) {
         console.error("Erreur lors du chargement des invitations:", error);

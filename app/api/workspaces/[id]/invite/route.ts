@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { inviteToWorkspace } from "@/lib/workspace-db";
+import { inviteToWorkspace } from "@/lib/workspace-actions";
 
 export async function POST(
   request: NextRequest,

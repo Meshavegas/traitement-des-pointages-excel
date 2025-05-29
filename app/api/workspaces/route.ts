@@ -1,24 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { currentUser } from "@clerk/nextjs/server";
 import {
   createWorkspace,
   getUserWorkspaces,
-  inviteToWorkspace,
-} from "@/lib/workspace-db";
+} from "@/lib/workspace-actions";
 
 export async function GET() {
   try {
-    const { userId } = await auth();
-    if (!userId) {
+    const user = await currentUser();
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const workspaces = await getUserWorkspaces(userId);
+    const workspaces = await getUserWorkspaces();
     return NextResponse.json(workspaces);
   } catch (error) {
     console.error("Error fetching workspaces:", error);
     return NextResponse.json(
-      { error: "Failed to fetch workspaces" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
@@ -26,6 +25,11 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { name } = await request.json();
     if (!name) {
       return NextResponse.json(
@@ -39,7 +43,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error creating workspace:", error);
     return NextResponse.json(
-      { error: "Failed to create workspace" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }

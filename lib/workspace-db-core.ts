@@ -1,5 +1,4 @@
 import Database from "better-sqlite3";
-import { currentUser } from "@clerk/nextjs/server";
 import { v4 as uuidv4 } from "uuid";
 
 const db = new Database("attendance.db");
@@ -72,25 +71,22 @@ export type WorkspaceInvitation = {
 };
 
 // Fonctions pour gérer les espaces de travail
-export async function createWorkspace(name: string) {
-  const user = await currentUser();
-  if (!user) throw new Error("Utilisateur non authentifié");
-
+export function createWorkspace(name: string, userId: string) {
   const id = uuidv4();
   const createdAt = new Date().toISOString();
 
   const stmt = db.prepare(
     `INSERT INTO workspaces (id, name, ownerId, createdAt) VALUES (?, ?, ?, ?)`
   );
-  stmt.run(id, name, user.id, createdAt);
+  stmt.run(id, name, userId, createdAt);
 
   // Ajouter le propriétaire comme membre
   const memberStmt = db.prepare(
     `INSERT INTO workspace_members (id, workspaceId, userId, role, addedAt) VALUES (?, ?, ?, ?, ?)`
   );
-  memberStmt.run(uuidv4(), id, user.id, "owner", createdAt);
+  memberStmt.run(uuidv4(), id, userId, "owner", createdAt);
 
-  return { id, name, ownerId: user.id, createdAt };
+  return { id, name, ownerId: userId, createdAt };
 }
 
 export function getUserWorkspaces(userId: string) {
@@ -198,58 +194,60 @@ export function getPendingInvitations(email: string) {
 }
 
 export function acceptInvitation(token: string, userId: string) {
-  const invitationStmt = db.prepare(`
+  const stmt = db.prepare(`
     SELECT * FROM workspace_invitations 
     WHERE token = ? AND status = 'pending' AND expiresAt > ?
   `);
-  const invitation = invitationStmt.get(token, new Date().toISOString()) as
-    | WorkspaceInvitation
-    | undefined;
+  const invitation = stmt.get(
+    token,
+    new Date().toISOString()
+  ) as WorkspaceInvitation;
 
-  if (!invitation) throw new Error("Invitation invalide ou expirée");
+  if (!invitation) {
+    throw new Error("Invitation invalide ou expirée");
+  }
 
-  // Mettre à jour le statut de l'invitation
-  const updateStmt = db.prepare(`
-    UPDATE workspace_invitations SET status = 'accepted' WHERE id = ?
-  `);
-  updateStmt.run(invitation.id);
-
-  // Vérifier si l'utilisateur est déjà membre
-  const checkMemberStmt = db.prepare(`
+  // Vérifier si l'utilisateur n'est pas déjà membre
+  const memberCheckStmt = db.prepare(`
     SELECT id FROM workspace_members 
     WHERE workspaceId = ? AND userId = ?
   `);
-  const existingMember = checkMemberStmt.get(invitation.workspaceId, userId);
+  const existingMember = memberCheckStmt.get(invitation.workspaceId, userId);
 
   if (existingMember) {
-    // L'utilisateur est déjà membre, on ne fait rien
-    return true;
+    throw new Error("Vous êtes déjà membre de cet espace de travail");
   }
 
-  // Ajouter l'utilisateur comme membre avec le rôle spécifié dans l'invitation
-  const role = invitation.role || "viewer";
-  const memberStmt = db.prepare(`
-    INSERT INTO workspace_members (id, workspaceId, userId, role, addedAt)
+  // Ajouter l'utilisateur comme membre
+  const addMemberStmt = db.prepare(`
+    INSERT INTO workspace_members (id, workspaceId, userId, role, addedAt) 
     VALUES (?, ?, ?, ?, ?)
   `);
-  memberStmt.run(
+  addMemberStmt.run(
     uuidv4(),
     invitation.workspaceId,
     userId,
-    role,
+    invitation.role || "viewer",
     new Date().toISOString()
   );
 
-  return true;
+  // Marquer l'invitation comme acceptée
+  const updateStmt = db.prepare(`
+    UPDATE workspace_invitations 
+    SET status = 'accepted' 
+    WHERE id = ?
+  `);
+  updateStmt.run(invitation.id);
+
+  return invitation;
 }
 
 export function addReportToWorkspace(workspaceId: string, reportId: string) {
   const stmt = db.prepare(`
-    INSERT INTO workspace_reports (workspaceId, reportId)
+    INSERT OR IGNORE INTO workspace_reports (workspaceId, reportId) 
     VALUES (?, ?)
   `);
   stmt.run(workspaceId, reportId);
-  return true;
 }
 
 export function getWorkspaceReports(workspaceId: string) {
@@ -262,140 +260,101 @@ export function getWorkspaceReports(workspaceId: string) {
 }
 
 export function canAccessReport(userId: string, reportId: string) {
-  // Vérifier si l'utilisateur est membre d'un espace de travail qui contient ce rapport
-  const stmt = db.prepare(`
-    SELECT COUNT(*) as count FROM workspace_members wm
-    JOIN workspace_reports wr ON wm.workspaceId = wr.workspaceId
-    WHERE wm.userId = ? AND wr.reportId = ?
+  // Vérifier si l'utilisateur est propriétaire du rapport
+  const ownerStmt = db.prepare(`
+    SELECT id FROM reports WHERE id = ? AND userId = ?
   `);
-  const result = stmt.get(userId, reportId) as { count: number };
-  return result.count > 0;
+  const isOwner = ownerStmt.get(reportId, userId);
+
+  if (isOwner) return true;
+
+  // Vérifier si l'utilisateur a accès via un espace de travail
+  const workspaceStmt = db.prepare(`
+    SELECT wm.role FROM workspace_members wm
+    JOIN workspace_reports wr ON wm.workspaceId = wr.workspaceId
+    WHERE wr.reportId = ? AND wm.userId = ?
+  `);
+  const workspaceAccess = workspaceStmt.get(reportId, userId);
+
+  return !!workspaceAccess;
 }
 
-/**
- * Met à jour le rôle d'un membre dans un espace de travail
- */
 export function updateMemberRole(
   memberId: string,
   newRole: "owner" | "editor" | "viewer"
 ) {
-  // Vérifier que le membre existe
-  const checkStmt = db.prepare(`SELECT * FROM workspace_members WHERE id = ?`);
-  const member = checkStmt.get(memberId) as WorkspaceMember | undefined;
-
-  if (!member) throw new Error("Membre non trouvé");
-
-  // Ne pas permettre de changer le rôle du propriétaire
-  if (member.role === "owner") {
-    throw new Error("Impossible de modifier le rôle du propriétaire");
-  }
-
-  // Mettre à jour le rôle
-  const stmt = db.prepare(`UPDATE workspace_members SET role = ? WHERE id = ?`);
+  const stmt = db.prepare(`
+    UPDATE workspace_members 
+    SET role = ? 
+    WHERE id = ?
+  `);
   stmt.run(newRole, memberId);
-
-  return true;
 }
 
-/**
- * Supprime un membre d'un espace de travail
- */
 export function removeMember(memberId: string) {
-  // Vérifier que le membre existe
-  const checkStmt = db.prepare(`SELECT * FROM workspace_members WHERE id = ?`);
-  const member = checkStmt.get(memberId) as WorkspaceMember | undefined;
-
-  if (!member) throw new Error("Membre non trouvé");
-
-  // Ne pas permettre de supprimer le propriétaire
-  if (member.role === "owner") {
-    throw new Error(
-      "Impossible de supprimer le propriétaire de l'espace de travail"
-    );
-  }
-
-  // Supprimer le membre
-  const stmt = db.prepare(`DELETE FROM workspace_members WHERE id = ?`);
+  const stmt = db.prepare(`
+    DELETE FROM workspace_members 
+    WHERE id = ?
+  `);
   stmt.run(memberId);
-
-  return true;
 }
 
-/**
- * Transfère la propriété d'un espace de travail à un autre membre
- */
 export function transferOwnership(
   workspaceId: string,
   newOwnerId: string,
   currentOwnerId: string
 ) {
   // Vérifier que l'utilisateur actuel est bien le propriétaire
-  const ownerCheckStmt = db.prepare(`
-    SELECT * FROM workspace_members 
-    WHERE workspaceId = ? AND userId = ? AND role = 'owner'
+  const ownerStmt = db.prepare(`
+    SELECT id FROM workspaces 
+    WHERE id = ? AND ownerId = ?
   `);
-  const currentOwner = ownerCheckStmt.get(workspaceId, currentOwnerId);
+  const isOwner = ownerStmt.get(workspaceId, currentOwnerId);
 
-  if (!currentOwner) {
+  if (!isOwner) {
     throw new Error("Seul le propriétaire peut transférer la propriété");
   }
 
-  // Vérifier que le nouveau propriétaire est bien membre de l'espace de travail
-  const memberCheckStmt = db.prepare(`
-    SELECT * FROM workspace_members 
+  // Vérifier que le nouveau propriétaire est membre de l'espace de travail
+  const memberStmt = db.prepare(`
+    SELECT id FROM workspace_members 
     WHERE workspaceId = ? AND userId = ?
   `);
-  const newOwnerMember = memberCheckStmt.get(workspaceId, newOwnerId);
+  const isMember = memberStmt.get(workspaceId, newOwnerId);
 
-  if (!newOwnerMember) {
-    throw new Error(
-      "Le nouveau propriétaire doit être membre de l'espace de travail"
-    );
+  if (!isMember) {
+    throw new Error("Le nouveau propriétaire doit être membre de l'espace de travail");
   }
 
-  // Mettre à jour le rôle du propriétaire actuel
-  const updateCurrentOwnerStmt = db.prepare(`
-    UPDATE workspace_members SET role = 'editor' 
+  // Transférer la propriété
+  const transferStmt = db.prepare(`
+    UPDATE workspaces 
+    SET ownerId = ? 
+    WHERE id = ?
+  `);
+  transferStmt.run(newOwnerId, workspaceId);
+
+  // Mettre à jour les rôles
+  const updateOldOwnerStmt = db.prepare(`
+    UPDATE workspace_members 
+    SET role = 'editor' 
     WHERE workspaceId = ? AND userId = ?
   `);
-  updateCurrentOwnerStmt.run(workspaceId, currentOwnerId);
+  updateOldOwnerStmt.run(workspaceId, currentOwnerId);
 
-  // Mettre à jour le rôle du nouveau propriétaire
   const updateNewOwnerStmt = db.prepare(`
-    UPDATE workspace_members SET role = 'owner' 
+    UPDATE workspace_members 
+    SET role = 'owner' 
     WHERE workspaceId = ? AND userId = ?
   `);
   updateNewOwnerStmt.run(workspaceId, newOwnerId);
-
-  // Mettre à jour le propriétaire dans la table des espaces de travail
-  const updateWorkspaceStmt = db.prepare(`
-    UPDATE workspaces SET ownerId = ? 
-    WHERE id = ?
-  `);
-  updateWorkspaceStmt.run(newOwnerId, workspaceId);
-
-  return true;
 }
 
-/**
- * Décline une invitation à un espace de travail
- */
 export function declineInvitation(token: string) {
-  const invitationStmt = db.prepare(`
-    SELECT * FROM workspace_invitations 
-    WHERE token = ? AND status = 'pending' AND expiresAt > ?
+  const stmt = db.prepare(`
+    UPDATE workspace_invitations 
+    SET status = 'declined' 
+    WHERE token = ? AND status = 'pending'
   `);
-  const invitation = invitationStmt.get(token, new Date().toISOString()) as
-    | WorkspaceInvitation
-    | undefined;
-
-  if (!invitation) throw new Error("Invitation invalide ou expirée");
-
-  // Mettre à jour le statut de l'invitation
-  const updateStmt = db.prepare(`
-    UPDATE workspace_invitations SET status = 'declined' WHERE id = ?
-  `);
-  updateStmt.run(invitation.id);
-
-  return true;
-}
+  stmt.run(token);
+} 

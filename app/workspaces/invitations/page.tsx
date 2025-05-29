@@ -25,8 +25,8 @@ import {
   getPendingInvitations,
   acceptInvitation,
   declineInvitation,
-  type WorkspaceInvitation,
-} from "@/lib/workspace-db";
+} from "@/lib/workspace-actions";
+import type { WorkspaceInvitation } from "@/lib/workspace-db-core";
 
 export default function InvitationsPage() {
   const [invitations, setInvitations] = useState<
@@ -43,9 +43,7 @@ export default function InvitationsPage() {
     const loadInvitations = async () => {
       try {
         setIsLoading(true);
-        const userInvitations = await getPendingInvitations(
-          user.emailAddresses[0].emailAddress
-        );
+        const userInvitations = await getPendingInvitations();
         setInvitations(userInvitations);
       } catch (error) {
         console.error("Erreur lors du chargement des invitations:", error);
@@ -65,7 +63,7 @@ export default function InvitationsPage() {
   const handleAcceptInvitation = async (token: string) => {
     try {
       if (user) {
-        await acceptInvitation(token, user.id);
+        await acceptInvitation(token);
         setInvitations(invitations.filter((inv) => inv.token !== token));
         toast({
           title: "Invitation acceptée",

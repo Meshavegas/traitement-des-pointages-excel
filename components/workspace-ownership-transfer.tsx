@@ -22,11 +22,10 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { Shield } from "lucide-react";
 import {
-  transferOwnership,
   getWorkspaceMembers,
-  type Workspace,
-  type WorkspaceMember,
-} from "@/lib/workspace-db";
+  transferOwnership,
+} from "@/lib/workspace-actions";
+import type { Workspace, WorkspaceMember } from "@/lib/workspace-db-core";
 
 interface WorkspaceOwnershipTransferProps {
   workspace: Workspace;
@@ -74,7 +73,7 @@ export function WorkspaceOwnershipTransfer({
 
     setIsLoading(true);
     try {
-      await transferOwnership(workspace.id, selectedMember.userId, user.id);
+      await transferOwnership(workspace.id, selectedMember.userId);
       toast({
         title: "Propriété transférée",
         description: `La propriété de l'espace de travail a été transférée avec succès.`,
