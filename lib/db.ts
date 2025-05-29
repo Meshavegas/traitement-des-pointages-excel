@@ -15,7 +15,8 @@ db.exec(`
     fileName TEXT NOT NULL,
     uploadDate TEXT NOT NULL,
     dateRangeStart TEXT NOT NULL,
-    dateRangeEnd TEXT NOT NULL
+    dateRangeEnd TEXT NOT NULL,
+    userId TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS employees (
@@ -55,10 +56,17 @@ db.exec(`
   );
 `);
 
+// Add userId column to existing reports table if it doesn't exist
+try {
+  db.exec(`ALTER TABLE reports ADD COLUMN userId TEXT`);
+} catch (error) {
+  // Column already exists, ignore error
+}
+
 // Prepare statements
 const insertReport = db.prepare(`
-  INSERT INTO reports (id, fileName, uploadDate, dateRangeStart, dateRangeEnd)
-  VALUES (?, ?, ?, ?, ?)
+  INSERT INTO reports (id, fileName, uploadDate, dateRangeStart, dateRangeEnd, userId)
+  VALUES (?, ?, ?, ?, ?, ?)
 `);
 
 const insertEmployee = db.prepare(`
@@ -76,7 +84,7 @@ const insertProcessedRecord = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
-export function saveReport(report: AttendanceReport): void {
+export function saveReport(report: AttendanceReport, userId: string): void {
   const {
     id,
     fileName,
@@ -89,7 +97,7 @@ export function saveReport(report: AttendanceReport): void {
 
   db.transaction(() => {
     // Insert report
-    insertReport.run(id, fileName, uploadDate, dateRange.start, dateRange.end);
+    insertReport.run(id, fileName, uploadDate, dateRange.start, dateRange.end, userId);
 
     // Insert employees
     for (const employee of employees) {
@@ -132,10 +140,10 @@ export function saveReport(report: AttendanceReport): void {
   })();
 }
 
-export function getReport(id: string): AttendanceReport | undefined {
+export function getReport(id: string, userId: string): AttendanceReport | undefined {
   const report = db
-    .prepare("SELECT * FROM reports WHERE id = ?")
-    .get(id) as AttendanceReport & {
+    .prepare("SELECT * FROM reports WHERE id = ? AND userId = ?")
+    .get(id, userId) as AttendanceReport & {
     dateRangeStart: string;
     dateRangeEnd: string;
   };
@@ -172,14 +180,14 @@ export function getReport(id: string): AttendanceReport | undefined {
   };
 }
 
-export function getAllReports(): AttendanceReport[] {
-  const reportIds = db.prepare("SELECT id FROM reports").all() as {
+export function getAllReports(userId: string): AttendanceReport[] {
+  const reportIds = db.prepare("SELECT id FROM reports WHERE userId = ?").all(userId) as {
     id: string;
   }[];
-  return reportIds.map(({ id }) => getReport(id)!).filter(Boolean);
+  return reportIds.map(({ id }) => getReport(id, userId)!).filter(Boolean);
 }
 
-export function deleteReport(id: string): boolean {
-  const result = db.prepare("DELETE FROM reports WHERE id = ?").run(id);
+export function deleteReport(id: string, userId: string): boolean {
+  const result = db.prepare("DELETE FROM reports WHERE id = ? AND userId = ?").run(id, userId);
   return result.changes > 0;
 }

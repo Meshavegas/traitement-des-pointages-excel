@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { read, utils } from "xlsx";
 import { v4 as uuidv4 } from "uuid";
+import { auth } from "@clerk/nextjs/server";
 import {
   saveReport,
   getAllReports,
@@ -315,6 +316,12 @@ function processAttendanceRecords(
 // Upload file action
 export async function uploadFile(formData: FormData) {
   try {
+    const { userId } = await auth();
+    
+    if (!userId) {
+      return { success: false, error: "User not authenticated" };
+    }
+
     const file = formData.get("file") as File;
 
     if (!file) {
@@ -391,8 +398,8 @@ export async function uploadFile(formData: FormData) {
       processedRecords,
     };
 
-    // Store report in database instead of memory
-    saveReport(report);
+    // Store report in database with userId
+    saveReport(report, userId);
 
     revalidatePath("/reports");
 
@@ -411,19 +418,37 @@ export async function uploadFile(formData: FormData) {
   }
 }
 
-// Get all reports
+// Get all reports for the current user
 export async function getReports() {
-  return getAllReports();
+  const { userId } = await auth();
+  
+  if (!userId) {
+    throw new Error("User not authenticated");
+  }
+  
+  return getAllReports(userId);
 }
 
-// Get a specific report
+// Get a specific report for the current user
 export async function getReport(id: string) {
-  return getReportFromDb(id);
+  const { userId } = await auth();
+  
+  if (!userId) {
+    throw new Error("User not authenticated");
+  }
+  
+  return getReportFromDb(id, userId);
 }
 
-// Delete a report
+// Delete a report for the current user
 export async function deleteReport(id: string) {
-  const deleted = deleteReportFromDb(id);
+  const { userId } = await auth();
+  
+  if (!userId) {
+    return { success: false, error: "User not authenticated" };
+  }
+  
+  const deleted = deleteReportFromDb(id, userId);
   if (deleted) {
     revalidatePath("/reports");
   }

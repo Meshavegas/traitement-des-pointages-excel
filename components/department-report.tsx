@@ -11,7 +11,22 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Download, Printer, Clock, Info, AlertCircle } from "lucide-react";
+import { 
+  Download, 
+  Printer, 
+  Clock, 
+  Info, 
+  AlertCircle, 
+  FileText, 
+  FileSpreadsheet,
+  ChevronDown 
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -43,6 +58,8 @@ import {
 import {
   generateSummaryStats,
   exportReportToCSV,
+  exportReportToExcel,
+  exportReportToPDF,
   groupRecordsByDepartmentAndEmployee,
 } from "@/lib/report-utils";
 
@@ -149,20 +166,43 @@ export function DepartmentReport({
     employeeShifts,
   ]);
 
-  // Imprime le rapport
-  const handlePrint = () => {
-    window.print();
-  };
-
-  // Exporte au format CSV
-  const handleExport = () => {
+  // Export functions
+  const handleExportCSV = () => {
     exportReportToCSV(
       filteredDepartments,
       filteredEmployeesByDepartment,
       filteredDates,
       employeeShifts,
-      selectedDepartment
+      selectedDepartment,
+      showHistory
     );
+  };
+
+  const handleExportExcel = () => {
+    const summaryStats = generateSummaryStats(
+      filteredDepartments,
+      filteredEmployeesByDepartment,
+      filteredDates,
+      employeeShifts
+    );
+    
+    exportReportToExcel(
+      filteredDepartments,
+      filteredEmployeesByDepartment,
+      filteredDates,
+      employeeShifts,
+      selectedDepartment,
+      showHistory,
+      summaryStats
+    );
+  };
+
+  const handleExportPDF = () => {
+    exportReportToPDF();
+  };
+
+  const handlePrint = () => {
+    window.print();
   };
 
   // Check if Operations department exists
@@ -236,14 +276,36 @@ export function DepartmentReport({
               </SelectContent>
             </Select>
           </div>
-          <Button variant="outline" size="icon" onClick={handlePrint}>
-            <Printer className="h-4 w-4" />
-            <span className="sr-only">Print</span>
-          </Button>
-          <Button variant="outline" size="icon" onClick={handleExport}>
-            <Download className="h-4 w-4" />
-            <span className="sr-only">Export</span>
-          </Button>
+          <div className="flex gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Download className="mr-2 h-4 w-4" />
+                  Export
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportCSV}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Export as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportExcel}>
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  Export as Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPDF}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Export as PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
+            <Button variant="outline" size="sm" onClick={handlePrint}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -406,350 +468,212 @@ export function DepartmentReport({
 
           <TabsContent value="table" className="mt-4">
             {filteredDepartments.length > 0 ? (
-              <div className="rounded-md border min-w-max overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr>
-                      <th
-                        rowSpan={2}
-                        className="border-b border-r p-2 text-left font-medium"
-                      >
-                        Date
-                      </th>
-                      {filteredDepartments.map((dept) => {
-                        const employees = employeesByDepartment[dept] || [];
+              <div className="space-y-6">
+                {filteredDepartments.map((dept) => {
+                  const employees = employeesByDepartment[dept] || [];
+                  
+                  return employees.map((employee) => (
+                    <div key={`${dept}-${employee.id}`} className="rounded-md border">
+                      {/* Employee Header */}
+                      <div className="bg-muted/30 p-4 border-b">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="font-medium text-lg">
+                              {employee.firstName.toUpperCase()} - {employee.department.toUpperCase()}
+                            </h3>
+                            <p className="text-sm text-muted-foreground">
+                              Employee ID: {employee.id}
+                            </p>
+                          </div>
+                          {employee.department === "Operation".toUpperCase() && (
+                            <Badge variant="outline" className="bg-background">
+                              {detectShiftPattern(employee)}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
 
-                        return employees.map((employee) => (
-                          <th
-                            key={`${dept}-${employee.id}`}
-                            colSpan={showHistory ? 7 : 6}
-                            className="border-b border-r p-2 text-center font-medium bg-muted/30"
-                          >
-                            <div>
-                              {employee.firstName} - {employee.department}
-                              {employee.department ===
-                                "Operation".toUpperCase() && (
-                                <div className="text-xs font-normal mt-1">
-                                  <Badge
-                                    variant="outline"
-                                    className="bg-background"
-                                  >
-                                    {detectShiftPattern(employee)}
-                                  </Badge>
-                                </div>
-                              )}
-                            </div>
-                          </th>
-                        ));
-                      })}
-                    </tr>
-                    <tr>
-                      {filteredDepartments.map((dept) => {
-                        const employees = employeesByDepartment[dept] || [];
-                        return employees.flatMap((employee) => {
-                          const columns = [
-                            <th
-                              key={`${employee.id}-scheduled`}
-                              className="border-b border-r p-2 text-center font-medium"
-                            >
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div className="flex items-center justify-center">
-                                      Scheduled
-                                      <Clock className="ml-1 h-3 w-3" />
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    {dept === "Operations" ? (
-                                      <div>
-                                        <p>Operations Department Schedules:</p>
-                                        <ul className="list-disc pl-4 mt-1">
-                                          {OPERATIONS_SCHEDULES.map(
-                                            (schedule, i) => (
-                                              <li key={i}>
-                                                {schedule.label}:{" "}
-                                                {schedule.time.substring(0, 5)}
-                                              </li>
-                                            )
-                                          )}
-                                        </ul>
-                                        <p className="mt-1 text-xs">
-                                          <strong>Note:</strong> Employees
-                                          arriving up to{" "}
-                                          {OPERATIONS_GRACE_PERIOD} minutes
-                                          before scheduled time are considered
-                                          on time.
-                                        </p>
-                                      </div>
-                                    ) : dept === "ID" ? (
-                                      <p>Scheduled start time: 8:00 AM</p>
-                                    ) : (
-                                      <p>No scheduled time defined</p>
-                                    )}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </th>,
-                            <th
-                              key={`${employee.id}-arrival`}
-                              className="border-b border-r p-2 text-center font-medium"
-                            >
-                              Arrival
-                            </th>,
-                            <th
-                              key={`${employee.id}-departure`}
-                              className="border-b border-r p-2 text-center font-medium"
-                            >
-                              Departure
-                            </th>,
-                            <th
-                              key={`${employee.id}-delay`}
-                              className="border-b border-r p-2 text-center font-medium"
-                            >
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div className="flex items-center justify-center">
-                                      Delay/Early
-                                      <AlertCircle className="ml-1 h-3 w-3" />
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Positive values indicate delays</p>
-                                    <p>
-                                      Negative values indicate early arrivals
-                                    </p>
-                                    {dept === "Operations" && (
-                                      <p className="mt-1 font-medium">
-                                        Operations: Arrivals up to{" "}
-                                        {OPERATIONS_GRACE_PERIOD} minutes before
-                                        scheduled time are considered on time
-                                        (0min)
-                                      </p>
-                                    )}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </th>,
-                            <th
-                              key={`${employee.id}-duration`}
-                              className="border-b border-r p-2 text-center font-medium"
-                            >
-                              Work Time
-                            </th>,
-                            <th
-                              key={`${employee.id}-punches`}
-                              className="border-b border-r p-2 text-center font-medium"
-                            >
-                              Punches
-                            </th>,
-                          ];
-
-                          if (showHistory) {
-                            columns.push(
-                              <th
-                                key={`${employee.id}-history`}
-                                className="border-b border-r p-2 text-center font-medium"
-                              >
-                                History
+                      {/* Employee Data Table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr>
+                              <th className="border-b border-r p-2 text-left font-medium">
+                                Date
                               </th>
-                            );
-                          }
-
-                          return columns;
-                        });
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredDates.map((date) => (
-                      <tr key={date} className="hover:bg-muted/50">
-                        <td className="border-r p-2 text-left">{date}</td>
-                        {filteredDepartments.map((dept) => {
-                          const employees = employeesByDepartment[dept] || [];
-
-                          return employees.flatMap((employee) => {
-                            const record = employee.records[date];
-                            const timeEntries =
-                              employee.allTimeEntries?.[date] || [];
-
-                            if (record) {
-                              // Determine scheduled time based on department and arrival time
-                              const scheduledTime = determineScheduledTime(
-                                record.arrivalTime,
-                                date,
-                                dept,
-                                employee
-                              );
-
-                              // Calculate delay or early arrival
-                              const {
-                                value: delayValue,
-                                isDelay,
-                                isOnTime,
-                              } = calculateDelay(
-                                record.arrivalTime,
-                                scheduledTime,
-                                dept
-                              );
-
-                              // Format time entries for history
-                              const {
-                                entries: formattedEntries,
-                                scheduledTimes,
-                              } = formatTimeEntries(
-                                timeEntries,
-                                dept,
-                                employee.id,
-                                employeeShifts
-                              );
-
-                              const columns = [
-                                <td
-                                  key={`${employee.id}-${date}-scheduled`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  {scheduledTime !== "-"
-                                    ? scheduledTime.substring(0, 5)
-                                    : "-"}
-                                </td>,
-                                <td
-                                  key={`${employee.id}-${date}-arrival`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  {record.arrivalTime}
-                                </td>,
-                                <td
-                                  key={`${employee.id}-${date}-departure`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  {record.departureTime}
-                                </td>,
-                                <td
-                                  key={`${employee.id}-${date}-delay`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  {delayValue !== "-" ? (
-                                    <span
-                                      className={
-                                        isOnTime
-                                          ? "text-blue-500 font-medium"
-                                          : isDelay
-                                          ? "text-red-500 font-medium"
-                                          : "text-green-500 font-medium"
-                                      }
-                                    >
-                                      {isOnTime ? "On time" : delayValue}
-                                    </span>
-                                  ) : (
-                                    "-"
-                                  )}
-                                </td>,
-                                <td
-                                  key={`${employee.id}-${date}-duration`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  {record.duration}
-                                </td>,
-                                <td
-                                  key={`${employee.id}-${date}-punches`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  {record.punchCount}
-                                </td>,
-                              ];
-
-                              if (showHistory) {
-                                columns.push(
-                                  <td
-                                    key={`${employee.id}-${date}-history`}
-                                    className="border-r p-2 text-center"
-                                  >
-                                    {record.othersPunch.length > 0 ? (
-                                      <div className="flex flex-wrap">
-                                        {" "}
-                                        {record.othersPunch?.map(
-                                          (entry, index) => (
-                                            <span key={index}>
-                                              {entry}
-                                              {index <
-                                              record.othersPunch.length - 1
-                                                ? ", "
-                                                : ""}
-                                            </span>
-                                          )
-                                        )}
+                              <th className="border-b border-r p-2 text-center font-medium">
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="flex items-center justify-center">
+                                        Scheduled
+                                        <Clock className="ml-1 h-3 w-3" />
                                       </div>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">
-                                        No entries
-                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {dept === "Operations" ? (
+                                        <div>
+                                          <p>Operations Department Schedules:</p>
+                                          <ul className="list-disc pl-4 mt-1">
+                                            {OPERATIONS_SCHEDULES.map((schedule, i) => (
+                                              <li key={i}>
+                                                {schedule.label}: {schedule.time.substring(0, 5)}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                          <p className="mt-1 text-xs">
+                                            <strong>Note:</strong> Employees arriving up to{" "}
+                                            {OPERATIONS_GRACE_PERIOD} minutes before scheduled time are considered on time.
+                                          </p>
+                                        </div>
+                                      ) : dept === "ID" ? (
+                                        <p>Scheduled start time: 8:00 AM</p>
+                                      ) : (
+                                        <p>No scheduled time defined</p>
+                                      )}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </th>
+                              <th className="border-b border-r p-2 text-center font-medium">
+                                Arrival
+                              </th>
+                              <th className="border-b border-r p-2 text-center font-medium">
+                                Departure
+                              </th>
+                              <th className="border-b border-r p-2 text-center font-medium">
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="flex items-center justify-center">
+                                        Delay/Early
+                                        <AlertCircle className="ml-1 h-3 w-3" />
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Positive values indicate delays</p>
+                                      <p>Negative values indicate early arrivals</p>
+                                      {dept === "Operations" && (
+                                        <p className="mt-1 font-medium">
+                                          Operations: Arrivals up to {OPERATIONS_GRACE_PERIOD} minutes before
+                                          scheduled time are considered on time (0min)
+                                        </p>
+                                      )}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </th>
+                              <th className="border-b border-r p-2 text-center font-medium">
+                                Work Time
+                              </th>
+                              <th className="border-b border-r p-2 text-center font-medium">
+                                Punches
+                              </th>
+                              {showHistory && (
+                                <th className="border-b p-2 text-center font-medium">
+                                  History
+                                </th>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredDates.map((date) => {
+                              const record = employee.records[date];
+                              const timeEntries = employee.allTimeEntries?.[date] || [];
+
+                              if (record) {
+                                // Determine scheduled time based on department and arrival time
+                                const scheduledTime = determineScheduledTime(
+                                  record.arrivalTime,
+                                  date,
+                                  dept,
+                                  employee
+                                );
+
+                                // Calculate delay or early arrival
+                                const {
+                                  value: delayValue,
+                                  isDelay,
+                                  isOnTime,
+                                } = calculateDelay(
+                                  record.arrivalTime,
+                                  scheduledTime,
+                                  dept
+                                );
+
+                                return (
+                                  <tr key={`${employee.id}-${date}`} className="hover:bg-muted/50">
+                                    <td className="border-r p-2 text-left">{date}</td>
+                                    <td className="border-r p-2 text-center">
+                                      {scheduledTime !== "-" ? scheduledTime.substring(0, 5) : "-"}
+                                    </td>
+                                    <td className="border-r p-2 text-center">
+                                      {record.arrivalTime}
+                                    </td>
+                                    <td className="border-r p-2 text-center">
+                                      {record.departureTime}
+                                    </td>
+                                    <td className="border-r p-2 text-center">
+                                      {delayValue !== "-" ? (
+                                        <span
+                                          className={
+                                            isOnTime
+                                              ? "text-blue-500 font-medium"
+                                              : isDelay
+                                              ? "text-red-500 font-medium"
+                                              : "text-green-500 font-medium"
+                                          }
+                                        >
+                                          {isOnTime ? "On time" : delayValue}
+                                        </span>
+                                      ) : (
+                                        "-"
+                                      )}
+                                    </td>
+                                    <td className="border-r p-2 text-center">
+                                      {record.duration}
+                                    </td>
+                                    <td className="border-r p-2 text-center">
+                                      {record.punchCount}
+                                    </td>
+                                    {showHistory && (
+                                      <td className="p-2 text-center">
+                                        {record.othersPunch.length > 0 ? (
+                                          <div className="text-xs">
+                                            {record.othersPunch.join(", ")}
+                                          </div>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground">
+                                            No entries
+                                          </span>
+                                        )}
+                                      </td>
                                     )}
-                                  </td>
+                                  </tr>
+                                );
+                              } else {
+                                return (
+                                  <tr key={`${employee.id}-${date}`} className="hover:bg-muted/50">
+                                    <td className="border-r p-2 text-left">{date}</td>
+                                    <td className="border-r p-2 text-center">-</td>
+                                    <td className="border-r p-2 text-center">-</td>
+                                    <td className="border-r p-2 text-center">-</td>
+                                    <td className="border-r p-2 text-center">-</td>
+                                    <td className="border-r p-2 text-center">-</td>
+                                    <td className="border-r p-2 text-center">-</td>
+                                    {showHistory && (
+                                      <td className="p-2 text-center">-</td>
+                                    )}
+                                  </tr>
                                 );
                               }
-
-                              return columns;
-                            } else {
-                              const emptyCells = [
-                                <td
-                                  key={`${employee.id}-${date}-scheduled`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  -
-                                </td>,
-                                <td
-                                  key={`${employee.id}-${date}-arrival`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  -
-                                </td>,
-                                <td
-                                  key={`${employee.id}-${date}-departure`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  -
-                                </td>,
-                                <td
-                                  key={`${employee.id}-${date}-delay`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  -
-                                </td>,
-                                <td
-                                  key={`${employee.id}-${date}-duration`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  -
-                                </td>,
-                                <td
-                                  key={`${employee.id}-${date}-punches`}
-                                  className="border-r p-2 text-center"
-                                >
-                                  -
-                                </td>,
-                              ];
-
-                              if (showHistory) {
-                                emptyCells.push(
-                                  <td
-                                    key={`${employee.id}-${date}-history`}
-                                    className="border-r p-2 text-center"
-                                  >
-                                    -
-                                  </td>
-                                );
-                              }
-
-                              return emptyCells;
-                            }
-                          });
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ));
+                })}
               </div>
             ) : (
               <div className="p-8 text-center">

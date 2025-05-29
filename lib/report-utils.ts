@@ -2,6 +2,7 @@
 import type { EmployeeData, SummaryStats } from "./types";
 import type { ProcessedRecord, AttendanceRecord } from "./actions";
 import { determineScheduledTime, calculateDelay } from "./shift-utils";
+import { utils, writeFile } from "xlsx";
 
 /**
  * Génère des statistiques récapitulatives pour les départements
@@ -25,20 +26,17 @@ export function generateSummaryStats(
   let totalDelayMinutes = 0;
   let totalDelayEntries = 0;
 
-  // Traite chaque département
   filteredDepartments.forEach((dept) => {
     const employees = employeesByDepartment[dept] || [];
+    summary.totalEmployees += employees.length;
+
+    let deptTotalEntries = 0;
     let deptOnTime = 0;
     let deptLate = 0;
     let deptEarly = 0;
     let deptTotalDelay = 0;
-    let deptTotalEntries = 0;
 
-    summary.totalEmployees += employees.length;
-
-    // Traite chaque employé
     employees.forEach((employee) => {
-      // Traite chaque date
       filteredDates.forEach((date) => {
         const record = employee.records[date];
         if (!record) return;
@@ -49,9 +47,9 @@ export function generateSummaryStats(
         // Détermine l'heure programmée
         const scheduledTime = determineScheduledTime(
           record.arrivalTime,
+          date,
           dept,
-          employee.id,
-          employeeShifts
+          employee
         );
         if (scheduledTime === "-") return;
 
@@ -110,12 +108,14 @@ export function exportReportToCSV(
   employeesByDepartment: Record<string, EmployeeData[]>,
   filteredDates: string[],
   employeeShifts: Record<string, string>,
-  selectedDepartment: string
+  selectedDepartment: string,
+  includeHistory: boolean = false
 ): void {
   // Crée les en-têtes
   const headers = [
     "Department",
-    "Employee",
+    "Employee ID",
+    "Employee Name",
     "Date",
     "Scheduled Start",
     "Arrival Time",
@@ -123,8 +123,11 @@ export function exportReportToCSV(
     "Delay/Early",
     "Duration",
     "Punches",
-    "All Time Entries",
   ];
+
+  if (includeHistory) {
+    headers.push("All Time Entries");
+  }
 
   // Crée les lignes
   const rows: string[][] = [];
@@ -139,19 +142,19 @@ export function exportReportToCSV(
         if (record) {
           const scheduledTime = determineScheduledTime(
             record.arrivalTime,
+            date,
             dept,
-            employee.id,
-            employeeShifts
+            employee
           );
           const { value: delayValue } = calculateDelay(
             record.arrivalTime,
             scheduledTime,
             dept
           );
-          const timeEntries = employee.allTimeEntries?.[date] || [];
 
-          rows.push([
+          const row = [
             dept,
+            employee.id,
             employee.firstName,
             date,
             scheduledTime,
@@ -160,8 +163,14 @@ export function exportReportToCSV(
             delayValue,
             record.duration,
             record.punchCount.toString(),
-            timeEntries.map((entry) => entry.time).join(", "),
-          ]);
+          ];
+
+          if (includeHistory) {
+            const timeEntries = employee.allTimeEntries?.[date] || [];
+            row.push(timeEntries.map((entry) => entry.time).join(", "));
+          }
+
+          rows.push(row);
         }
       });
     });
@@ -170,7 +179,7 @@ export function exportReportToCSV(
   // Crée le contenu CSV
   const csvContent = [
     headers.join(","),
-    ...rows.map((row) => row.join(",")),
+    ...rows.map((row) => row.map(cell => `"${cell}"`).join(",")),
   ].join("\n");
 
   // Télécharge le CSV
@@ -180,12 +189,143 @@ export function exportReportToCSV(
   link.setAttribute("href", url);
   link.setAttribute(
     "download",
-    `attendance-report-${selectedDepartment || "all"}.csv`
+    `attendance-report-${selectedDepartment || "all"}-${new Date().toISOString().split('T')[0]}.csv`
   );
   link.style.visibility = "hidden";
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+/**
+ * Exporte les données du rapport au format Excel
+ */
+export function exportReportToExcel(
+  filteredDepartments: string[],
+  employeesByDepartment: Record<string, EmployeeData[]>,
+  filteredDates: string[],
+  employeeShifts: Record<string, string>,
+  selectedDepartment: string,
+  includeHistory: boolean = false,
+  summaryStats?: SummaryStats
+): void {
+  // Crée un nouveau workbook
+  const workbook = utils.book_new();
+
+  // Feuille principale avec les données détaillées
+  const headers = [
+    "Department",
+    "Employee ID", 
+    "Employee Name",
+    "Date",
+    "Scheduled Start",
+    "Arrival Time",
+    "Departure Time",
+    "Delay/Early",
+    "Duration",
+    "Punches",
+  ];
+
+  if (includeHistory) {
+    headers.push("All Time Entries");
+  }
+
+  const rows: any[][] = [headers];
+
+  filteredDepartments.forEach((dept) => {
+    const employees = employeesByDepartment[dept] || [];
+
+    employees.forEach((employee) => {
+      filteredDates.forEach((date) => {
+        const record = employee.records[date];
+
+        if (record) {
+          const scheduledTime = determineScheduledTime(
+            record.arrivalTime,
+            date,
+            dept,
+            employee
+          );
+          const { value: delayValue } = calculateDelay(
+            record.arrivalTime,
+            scheduledTime,
+            dept
+          );
+
+          const row = [
+            dept,
+            employee.id,
+            employee.firstName,
+            date,
+            scheduledTime,
+            record.arrivalTime,
+            record.departureTime,
+            delayValue,
+            record.duration,
+            record.punchCount,
+          ];
+
+          if (includeHistory) {
+            const timeEntries = employee.allTimeEntries?.[date] || [];
+            row.push(timeEntries.map((entry) => entry.time).join(", "));
+          }
+
+          rows.push(row);
+        }
+      });
+    });
+  });
+
+  // Crée la feuille de données
+  const worksheet = utils.aoa_to_sheet(rows);
+  utils.book_append_sheet(workbook, worksheet, "Attendance Data");
+
+  // Feuille de résumé si les statistiques sont fournies
+  if (summaryStats) {
+    const summaryRows = [
+      ["Attendance Summary Report"],
+      [""],
+      ["Overall Statistics"],
+      ["Total Employees", summaryStats.totalEmployees],
+      ["Total Entries", summaryStats.totalEntries],
+      ["On Time", summaryStats.onTimeCount],
+      ["Late", summaryStats.lateCount],
+      ["Early", summaryStats.earlyCount],
+      ["Average Delay (minutes)", Math.round(summaryStats.averageDelay)],
+      [""],
+      ["Department Statistics"],
+      ["Department", "Employees", "Entries", "On Time", "Late", "Early", "Avg Delay"],
+    ];
+
+    Object.entries(summaryStats.departmentStats).forEach(([dept, stats]) => {
+      summaryRows.push([
+        dept,
+        stats.employees,
+        stats.entries,
+        stats.onTime,
+        stats.late,
+        stats.early,
+        Math.round(stats.avgDelay),
+      ]);
+    });
+
+    const summaryWorksheet = utils.aoa_to_sheet(summaryRows);
+    utils.book_append_sheet(workbook, summaryWorksheet, "Summary");
+  }
+
+  // Télécharge le fichier Excel
+  writeFile(
+    workbook,
+    `attendance-report-${selectedDepartment || "all"}-${new Date().toISOString().split('T')[0]}.xlsx`
+  );
+}
+
+/**
+ * Exporte les données du rapport au format PDF (via impression)
+ */
+export function exportReportToPDF(): void {
+  // Utilise la fonction d'impression du navigateur pour générer un PDF
+  window.print();
 }
 
 /**
