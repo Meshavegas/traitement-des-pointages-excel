@@ -319,14 +319,18 @@ export async function uploadFile(formData: FormData) {
     const { userId } = await auth();
     
     if (!userId) {
+      console.error("Upload attempt without authentication");
       return { success: false, error: "User not authenticated" };
     }
 
     const file = formData.get("file") as File;
 
     if (!file) {
+      console.error("Upload attempt without file");
       return { success: false, error: "No file provided" };
     }
+
+    console.log(`Processing file: ${file.name}, size: ${file.size} bytes`);
 
     // Process the file directly in memory
     const arrayBuffer = await file.arrayBuffer();
@@ -340,12 +344,17 @@ export async function uploadFile(formData: FormData) {
     // Convert to array of arrays
     const data = utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
 
+    console.log(`Excel data parsed, ${data.length} rows found`);
+
     // Parse the data
     const attendanceRecords = parseExcelData(data);
 
     if (attendanceRecords.length === 0) {
+      console.error("No valid records found in Excel file");
       return { success: false, error: "No valid records found in the file" };
     }
+
+    console.log(`${attendanceRecords.length} attendance records parsed`);
 
     // Process the records
     const processedRecords = processAttendanceRecords(attendanceRecords);
@@ -398,8 +407,12 @@ export async function uploadFile(formData: FormData) {
       processedRecords,
     };
 
+    console.log(`Saving report ${reportId} to database`);
+
     // Store report in database with userId
     saveReport(report, userId);
+
+    console.log(`Report ${reportId} saved successfully`);
 
     revalidatePath("/reports");
 
@@ -410,10 +423,26 @@ export async function uploadFile(formData: FormData) {
     };
   } catch (error) {
     console.error("Error processing file:", error);
+    
+    // Provide more specific error messages
+    let errorMessage = "An unknown error occurred";
+    
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      
+      // Check for specific error types
+      if (error.message.includes("database")) {
+        errorMessage = "Database error: Unable to save the report. Please try again.";
+      } else if (error.message.includes("XLSX")) {
+        errorMessage = "File format error: Please ensure you're uploading a valid XLSX file.";
+      } else if (error.message.includes("memory")) {
+        errorMessage = "Memory error: The file might be too large. Please try with a smaller file.";
+      }
+    }
+    
     return {
       success: false,
-      error:
-        error instanceof Error ? error.message : "An unknown error occurred",
+      error: errorMessage,
     };
   }
 }

@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { getDatabase } from "./db-config";
 import {
   AttendanceReport,
   Employee,
@@ -6,7 +6,8 @@ import {
   ProcessedRecord,
 } from "./actions";
 
-const db = new Database("attendance.db");
+// Utiliser la configuration centralisée de la base de données
+const db = getDatabase();
 
 // Initialize database tables
 db.exec(`
@@ -95,99 +96,137 @@ export function saveReport(report: AttendanceReport, userId: string): void {
     processedRecords,
   } = report;
 
-  db.transaction(() => {
-    // Insert report
-    insertReport.run(id, fileName, uploadDate, dateRange.start, dateRange.end, userId);
+  try {
+    db.transaction(() => {
+      // Insert report
+      insertReport.run(id, fileName, uploadDate, dateRange.start, dateRange.end, userId);
 
-    // Insert employees
-    for (const employee of employees) {
-      insertEmployee.run(
-        employee.id,
-        id,
-        employee.firstName,
-        employee.department
-      );
-    }
+      // Insert employees
+      for (const employee of employees) {
+        insertEmployee.run(
+          employee.id,
+          id,
+          employee.firstName,
+          employee.department
+        );
+      }
 
-    // Insert attendance records
-    for (const record of attendanceRecords) {
-      insertAttendanceRecord.run(
-        id,
-        record.employeeId,
-        record.firstName,
-        record.department,
-        record.date,
-        record.time,
-        record.timestamp
-      );
-    }
+      // Insert attendance records
+      for (const record of attendanceRecords) {
+        insertAttendanceRecord.run(
+          id,
+          record.employeeId,
+          record.firstName,
+          record.department,
+          record.date,
+          record.time,
+          record.timestamp
+        );
+      }
 
-    // Insert processed records
-    for (const record of processedRecords) {
-      insertProcessedRecord.run(
-        id,
-        record.employeeId,
-        record.firstName,
-        record.department,
-        record.date,
-        record.arrivalTime,
-        record.departureTime,
-        record.duration,
-        record.punchCount,
-        JSON.stringify(record.othersPunch)
-      );
-    }
-  })();
+      // Insert processed records
+      for (const record of processedRecords) {
+        insertProcessedRecord.run(
+          id,
+          record.employeeId,
+          record.firstName,
+          record.department,
+          record.date,
+          record.arrivalTime,
+          record.departureTime,
+          record.duration,
+          record.punchCount,
+          JSON.stringify(record.othersPunch)
+        );
+      }
+    })();
+  } catch (error) {
+    console.error("Error saving report to database:", error);
+    throw new Error("Failed to save report to database");
+  }
 }
 
 export function getReport(id: string, userId: string): AttendanceReport | undefined {
-  const report = db
-    .prepare("SELECT * FROM reports WHERE id = ? AND userId = ?")
-    .get(id, userId) as AttendanceReport & {
-    dateRangeStart: string;
-    dateRangeEnd: string;
-  };
+  try {
+    const report = db
+      .prepare("SELECT * FROM reports WHERE id = ? AND userId = ?")
+      .get(id, userId) as AttendanceReport & {
+      dateRangeStart: string;
+      dateRangeEnd: string;
+    };
 
-  if (!report) return undefined;
+    if (!report) return undefined;
 
-  const employees = db
-    .prepare("SELECT * FROM employees WHERE reportId = ?")
-    .all(id) as Employee[];
-  const attendanceRecords = db
-    .prepare("SELECT * FROM attendance_records WHERE reportId = ?")
-    .all(id) as AttendanceRecord[];
-  const processedRecords = db
-    .prepare("SELECT * FROM processed_records WHERE reportId = ?")
-    .all(id) as (Omit<ProcessedRecord, "othersPunch"> & {
-    othersPunch: string;
-  })[];
+    const employees = db
+      .prepare("SELECT * FROM employees WHERE reportId = ?")
+      .all(id) as Employee[];
+    const attendanceRecords = db
+      .prepare("SELECT * FROM attendance_records WHERE reportId = ?")
+      .all(id) as AttendanceRecord[];
+    const processedRecords = db
+      .prepare("SELECT * FROM processed_records WHERE reportId = ?")
+      .all(id) as (Omit<ProcessedRecord, "othersPunch"> & {
+      othersPunch: string;
+    })[];
 
-  return {
-    id: report.id,
-    fileName: report.fileName,
-    uploadDate: report.uploadDate,
-    dateRange: {
-      start: report.dateRangeStart,
-      end: report.dateRangeEnd,
-    },
-    employees: employees as Employee[],
-    departments: [...new Set(employees.map((e: Employee) => e.department))],
-    attendanceRecords: attendanceRecords as AttendanceRecord[],
-    processedRecords: processedRecords.map((r) => ({
-      ...r,
-      othersPunch: JSON.parse(r.othersPunch),
-    })) as ProcessedRecord[],
-  };
+    return {
+      id: report.id,
+      fileName: report.fileName,
+      uploadDate: report.uploadDate,
+      dateRange: {
+        start: report.dateRangeStart,
+        end: report.dateRangeEnd,
+      },
+      employees: employees as Employee[],
+      departments: [...new Set(employees.map((e: Employee) => e.department))],
+      attendanceRecords: attendanceRecords as AttendanceRecord[],
+      processedRecords: processedRecords.map((r) => ({
+        ...r,
+        othersPunch: JSON.parse(r.othersPunch),
+      })) as ProcessedRecord[],
+    };
+  } catch (error) {
+    console.error("Error retrieving report from database:", error);
+    return undefined;
+  }
 }
 
 export function getAllReports(userId: string): AttendanceReport[] {
-  const reportIds = db.prepare("SELECT id FROM reports WHERE userId = ?").all(userId) as {
-    id: string;
-  }[];
-  return reportIds.map(({ id }) => getReport(id, userId)!).filter(Boolean);
+  try {
+    const reports = db
+      .prepare("SELECT * FROM reports WHERE userId = ? ORDER BY uploadDate DESC")
+      .all(userId) as (AttendanceReport & {
+      dateRangeStart: string;
+      dateRangeEnd: string;
+    })[];
+
+    return reports.map((report) => ({
+      id: report.id,
+      fileName: report.fileName,
+      uploadDate: report.uploadDate,
+      dateRange: {
+        start: report.dateRangeStart,
+        end: report.dateRangeEnd,
+      },
+      employees: [],
+      departments: [],
+      attendanceRecords: [],
+      processedRecords: [],
+    }));
+  } catch (error) {
+    console.error("Error retrieving reports from database:", error);
+    return [];
+  }
 }
 
 export function deleteReport(id: string, userId: string): boolean {
-  const result = db.prepare("DELETE FROM reports WHERE id = ? AND userId = ?").run(id, userId);
-  return result.changes > 0;
+  try {
+    const result = db
+      .prepare("DELETE FROM reports WHERE id = ? AND userId = ?")
+      .run(id, userId);
+    return result.changes > 0;
+  } catch (error) {
+    console.error("Error deleting report from database:", error);
+    return false;
+  }
 }
