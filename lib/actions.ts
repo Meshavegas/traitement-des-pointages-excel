@@ -9,7 +9,7 @@ import {
   getAllReports,
   getReport as getReportFromDb,
   deleteReport as deleteReportFromDb,
-} from "./db";
+} from "./mongodb-db";
 import { calculateDuration, EVENING_SHIFT_START } from "./shift-utils";
 import { log } from "console";
 
@@ -477,7 +477,7 @@ export async function deleteReport(id: string) {
     return { success: false, error: "User not authenticated" };
   }
   
-  const deleted = deleteReportFromDb(id, userId);
+  const deleted = await deleteReportFromDb(id, userId);
   if (deleted) {
     revalidatePath("/reports");
   }
