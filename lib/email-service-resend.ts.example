@@ -1,0 +1,328 @@
+// Configuration Resend - Renommer ce fichier en email-service.ts et installer resend
+import { Resend } from 'resend';
+import type { WorkspaceInvitation } from './postgres-workspace';
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+interface EmailOptions {
+  to: string;
+  subject: string;
+  html: string;
+}
+
+// Fonction pour envoyer un email via Resend
+async function sendEmail(options: EmailOptions) {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'Pointages <noreply@votre-domaine.com>', // Remplacer par votre domaine vérifié
+      to: [options.to],
+      subject: options.subject,
+      html: options.html,
+    });
+
+    if (error) {
+      throw new Error(`Resend error: ${error.message}`);
+    }
+
+    console.log(`📧 Email sent via Resend: ${data?.id}`);
+    return { success: true, id: data?.id };
+  } catch (error) {
+    console.error('❌ Error sending email via Resend:', error);
+    throw error;
+  }
+}
+
+// Fonction pour envoyer une invitation par email
+export async function sendWorkspaceInvitation(
+  invitation: WorkspaceInvitation,
+  workspaceName: string,
+  inviterName: string
+) {
+  const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/workspaces/invitations?token=${invitation.token}`;
+  
+  const emailHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Invitation à rejoindre un espace de travail</title>
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6; 
+            color: #333; 
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+          }
+          .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+          }
+          .header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 20px; 
+            border-radius: 8px 8px 0 0; 
+            margin: -20px -20px 20px -20px;
+            text-align: center;
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+          }
+          .content {
+            padding: 0 20px;
+          }
+          .button { 
+            display: inline-block; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            padding: 14px 28px; 
+            text-decoration: none; 
+            border-radius: 6px; 
+            margin: 20px 0;
+            font-weight: 600;
+            text-align: center;
+          }
+          .button:hover {
+            opacity: 0.9;
+          }
+          .info-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+          }
+          .footer { 
+            margin-top: 30px; 
+            padding-top: 20px; 
+            border-top: 1px solid #eee; 
+            color: #666; 
+            font-size: 14px;
+            text-align: center;
+          }
+          .link {
+            color: #667eea;
+            word-break: break-all;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🎯 Invitation à rejoindre un espace de travail</h1>
+          </div>
+          
+          <div class="content">
+            <p>Bonjour,</p>
+            
+            <p><strong>${inviterName}</strong> vous invite à rejoindre l'espace de travail <strong>"${workspaceName}"</strong> sur notre plateforme de traitement des pointages.</p>
+            
+            <div class="info-box">
+              <p><strong>Détails de l'invitation :</strong></p>
+              <ul>
+                <li>Espace de travail : <strong>${workspaceName}</strong></li>
+                <li>Rôle attribué : <strong>${invitation.role === 'editor' ? 'Éditeur' : 'Lecteur'}</strong></li>
+                <li>Expire le : <strong>${new Date(invitation.expiresAt).toLocaleDateString('fr-FR')}</strong></li>
+              </ul>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${inviteUrl}" class="button">✅ Accepter l'invitation</a>
+            </div>
+            
+            <p>Ou copiez ce lien dans votre navigateur :</p>
+            <p class="link">${inviteUrl}</p>
+            
+            <div class="footer">
+              <p>Si vous n'attendiez pas cette invitation, vous pouvez ignorer cet email en toute sécurité.</p>
+              <p>Cet email a été envoyé automatiquement par le système de pointages.</p>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  try {
+    const result = await sendEmail({
+      to: invitation.email,
+      subject: `🎯 Invitation à rejoindre l'espace de travail "${workspaceName}"`,
+      html: emailHtml,
+    });
+
+    console.log(`✅ Invitation email sent to ${invitation.email} for workspace ${workspaceName}`);
+    return result;
+  } catch (error) {
+    console.error('❌ Error sending invitation email:', error);
+    throw new Error('Failed to send invitation email');
+  }
+}
+
+// Fonction pour envoyer un email de bienvenue lors de la création d'un workspace
+export async function sendWorkspaceCreatedEmail(
+  userEmail: string,
+  userName: string,
+  workspaceName: string
+) {
+  const emailHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Espace de travail créé avec succès</title>
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6; 
+            color: #333; 
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+          }
+          .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+          }
+          .header { 
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 30px 20px; 
+            border-radius: 8px 8px 0 0; 
+            margin: -20px -20px 20px -20px;
+            text-align: center;
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+          }
+          .content {
+            padding: 0 20px;
+          }
+          .button { 
+            display: inline-block; 
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white; 
+            padding: 14px 28px; 
+            text-decoration: none; 
+            border-radius: 6px; 
+            margin: 20px 0;
+            font-weight: 600;
+            text-align: center;
+          }
+          .feature-list {
+            background: #f8f9fa;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border-left: 4px solid #28a745;
+          }
+          .feature-list ul {
+            margin: 0;
+            padding-left: 20px;
+          }
+          .feature-list li {
+            margin: 8px 0;
+          }
+          .footer { 
+            margin-top: 30px; 
+            padding-top: 20px; 
+            border-top: 1px solid #eee; 
+            color: #666; 
+            font-size: 14px;
+            text-align: center;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🎉 Espace de travail créé avec succès !</h1>
+          </div>
+          
+          <div class="content">
+            <p>Bonjour ${userName},</p>
+            
+            <p>Félicitations ! Votre espace de travail <strong>"${workspaceName}"</strong> a été créé avec succès sur notre plateforme de traitement des pointages.</p>
+            
+            <div class="feature-list">
+              <p><strong>Vous pouvez maintenant :</strong></p>
+              <ul>
+                <li>📊 Uploader et analyser vos rapports de pointage</li>
+                <li>👥 Inviter des collègues à rejoindre votre espace</li>
+                <li>🤝 Partager et collaborer sur les données de pointage</li>
+                <li>📈 Générer des exports Excel personnalisés</li>
+                <li>🔒 Contrôler l'accès avec des rôles définis</li>
+              </ul>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/workspaces" class="button">🚀 Accéder à mon espace</a>
+            </div>
+            
+            <div class="footer">
+              <p>Merci d'utiliser notre plateforme de traitement des pointages !</p>
+              <p>L'équipe de développement</p>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  try {
+    const result = await sendEmail({
+      to: userEmail,
+      subject: `🎉 Espace de travail "${workspaceName}" créé avec succès`,
+      html: emailHtml,
+    });
+
+    console.log(`✅ Workspace created email sent to ${userEmail}`);
+    return result;
+  } catch (error) {
+    console.error('❌ Error sending workspace created email:', error);
+    throw new Error('Failed to send workspace created email');
+  }
+}
+
+// Configuration additionnelle pour Resend
+export const resendConfig = {
+  // Domaine vérifié pour l'envoi d'emails
+  fromDomain: 'votre-domaine.com',
+  
+  // Templates d'emails (optionnel, pour utiliser les templates Resend)
+  templates: {
+    workspaceInvitation: 'workspace-invitation-template-id',
+    workspaceCreated: 'workspace-created-template-id',
+  },
+  
+  // Configuration des webhooks (optionnel)
+  webhooks: {
+    delivered: process.env.RESEND_WEBHOOK_DELIVERED,
+    bounced: process.env.RESEND_WEBHOOK_BOUNCED,
+    complained: process.env.RESEND_WEBHOOK_COMPLAINED,
+  }
+};
+
+// Instructions d'installation :
+// 1. npm install resend
+// 2. Créer un compte sur https://resend.com
+// 3. Vérifier votre domaine
+// 4. Obtenir votre clé API
+// 5. Ajouter RESEND_API_KEY à vos variables d'environnement
+// 6. Renommer ce fichier en email-service.ts
+// 7. Remplacer 'votre-domaine.com' par votre domaine vérifié 

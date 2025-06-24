@@ -7,10 +7,13 @@ import { auth } from "@clerk/nextjs/server";
 import {
   saveReport,
   getAllReports,
+  getAllAccessibleReports,
   getReport as getReportFromDb,
+  getReportByWorkspace as getReportFromDbByWorkspace,
   deleteReport as deleteReportFromDb,
-} from "./mongodb-db";
+} from "./postgres-db";
 import { calculateDuration, EVENING_SHIFT_START } from "./shift-utils";
+import { getOrCreateDefaultWorkspace, canUserAccessReport } from "./workspace-actions";
 import { log } from "console";
 
 // Type definitions
@@ -314,7 +317,7 @@ function processAttendanceRecords(
 }
 
 // Upload file action
-export async function uploadFile(formData: FormData) {
+export async function uploadFile(formData: FormData, workspaceId?: string) {
   try {
     const { userId } = await auth();
     
@@ -409,12 +412,23 @@ export async function uploadFile(formData: FormData) {
 
     console.log(`Saving report ${reportId} to database`);
 
-    // Store report in database with userId
-    saveReport(report, userId);
+    // Utiliser le workspaceId fourni ou récupérer/créer un workspace par défaut
+    let targetWorkspaceId = workspaceId;
+    let workspaceName = "workspace";
+    
+    if (!targetWorkspaceId) {
+      const defaultWorkspace = await getOrCreateDefaultWorkspace();
+      targetWorkspaceId = defaultWorkspace.id;
+      workspaceName = defaultWorkspace.name;
+    }
+    
+    // Store report in database with userId and workspaceId
+    await saveReport(report, userId, targetWorkspaceId);
 
-    console.log(`Report ${reportId} saved successfully`);
+    console.log(`Report ${reportId} saved successfully in workspace ${workspaceName}`);
 
     revalidatePath("/reports");
+    revalidatePath("/workspaces");
 
     return {
       success: true,
@@ -455,10 +469,10 @@ export async function getReports() {
     throw new Error("User not authenticated");
   }
   
-  return getAllReports(userId);
+  return getAllAccessibleReports(userId);
 }
 
-// Get a specific report for the current user
+// Get a specific report for the current user (with workspace access check)
 export async function getReport(id: string) {
   const { userId } = await auth();
   
@@ -466,7 +480,19 @@ export async function getReport(id: string) {
     throw new Error("User not authenticated");
   }
   
-  return getReportFromDb(id, userId);
+  // D'abord, essayer d'accéder au rapport en tant que propriétaire
+  let report = await getReportFromDb(id, userId);
+  
+  // Si l'utilisateur n'est pas le propriétaire, vérifier l'accès via workspace
+  if (!report) {
+    const hasAccess = await canUserAccessReport(id);
+    if (hasAccess) {
+      // Récupérer le rapport sans restriction de propriétaire
+      report = await getReportFromDbByWorkspace(id, userId);
+    }
+  }
+  
+  return report;
 }
 
 // Delete a report for the current user
@@ -482,4 +508,9 @@ export async function deleteReport(id: string) {
     revalidatePath("/reports");
   }
   return { success: deleted };
+}
+
+// Upload file to specific workspace action
+export async function uploadFileToWorkspace(formData: FormData, workspaceId: string) {
+  return uploadFile(formData, workspaceId);
 }

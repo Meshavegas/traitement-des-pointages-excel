@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useUser, SignInButton } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
@@ -18,14 +18,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { UploadIcon, Loader2, LogIn } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { uploadFile } from "@/lib/actions";
+import { uploadFile, uploadFileToWorkspace } from "@/lib/actions";
+import { WorkspaceSelector } from "@/components/workspace-selector";
 
 export function Upload() {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
-  const { isSignedIn, isLoaded } = useUser();
+  const { isSignedIn, isLoaded, user } = useUser();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -69,7 +71,12 @@ export function Upload() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const result = await uploadFile(formData);
+      let result;
+      if (selectedWorkspaceId) {
+        result = await uploadFileToWorkspace(formData, selectedWorkspaceId);
+      } else {
+        result = await uploadFile(formData);
+      }
 
       if (result.success) {
         toast({
@@ -136,11 +143,16 @@ export function Upload() {
                   : "Please sign in to upload attendance data"
                 }
               </CardDescription>
+
             </CardHeader>
             {isSignedIn ? (
               <form onSubmit={handleSubmit}>
                 <CardContent>
                   <div className="grid w-full items-center gap-4">
+                    <WorkspaceSelector
+                      selectedWorkspaceId={selectedWorkspaceId}
+                      onWorkspaceChange={setSelectedWorkspaceId}
+                    />
                     <div className="flex flex-col space-y-1.5">
                       <Label htmlFor="file">File</Label>
                       <Input

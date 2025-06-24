@@ -1,5 +1,6 @@
 // Utilitaires pour la gestion des quarts de travail et le calcul des retards
-import type { EmployeeData, AttendanceRecord } from "./types";
+import type { EmployeeData } from "./types";
+import type { AttendanceRecord } from "./actions";
 
 // Constantes pour les horaires
 export const OPERATIONS_SCHEDULES = [
@@ -299,7 +300,7 @@ export function formatTimeEntries(
 
   // Détermine l'heure programmée pour chaque entrée
   const scheduledTimes = sortedEntries.map((entry) =>
-    determineScheduledTime(entry.time, department, employeeId, employeeShifts)
+    determineScheduledTime(entry.time, entry.date, department, employeeShifts as any)
   );
 
   return { entries: sortedEntries, scheduledTimes };

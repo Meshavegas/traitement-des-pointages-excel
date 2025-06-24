@@ -113,29 +113,62 @@ export function exportReportToCSV(
 ): void {
   // Crée les en-têtes
   const headers = [
-    "Department",
-    "Employee ID",
-    "Employee Name",
     "Date",
     "Scheduled Start",
     "Arrival Time",
     "Departure Time",
     "Delay/Early",
-    "Duration",
+    "Work Time",
     "Punches",
   ];
 
   if (includeHistory) {
-    headers.push("All Time Entries");
+    headers.push("History");
   }
 
-  // Crée les lignes
+  // Crée les lignes organisées par employé
   const rows: string[][] = [];
 
   filteredDepartments.forEach((dept) => {
     const employees = employeesByDepartment[dept] || [];
 
     employees.forEach((employee) => {
+      // Ajoute une ligne vide pour séparer les employés (sauf pour le premier)
+      if (rows.length > 0) {
+        rows.push([""]);
+      }
+
+      // En-tête de l'employé
+      rows.push([
+        `${employee.firstName.toUpperCase()} - ${employee.department.toUpperCase()}`,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ...(includeHistory ? [""] : [])
+      ]);
+      
+      // Sous-titre avec l'ID de l'employé
+      rows.push([
+        `Employee ID: ${employee.id}`,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ...(includeHistory ? [""] : [])
+      ]);
+
+      // Ligne vide
+      rows.push([""]);
+
+      // En-têtes des colonnes pour cet employé
+      rows.push(headers);
+
+      // Données pour chaque date
       filteredDates.forEach((date) => {
         const record = employee.records[date];
 
@@ -146,41 +179,59 @@ export function exportReportToCSV(
             dept,
             employee
           );
-          const { value: delayValue } = calculateDelay(
+          const {
+            value: delayValue,
+            isDelay,
+            isOnTime,
+          } = calculateDelay(
             record.arrivalTime,
             scheduledTime,
             dept
           );
 
           const row = [
-            dept,
-            employee.id,
-            employee.firstName,
             date,
-            scheduledTime,
+            scheduledTime !== "-" ? scheduledTime.substring(0, 5) : "-",
             record.arrivalTime,
             record.departureTime,
-            delayValue,
+            isOnTime ? "On time" : delayValue,
             record.duration,
             record.punchCount.toString(),
           ];
 
           if (includeHistory) {
-            const timeEntries = employee.allTimeEntries?.[date] || [];
-            row.push(timeEntries.map((entry) => entry.time).join(", "));
+            if (record.othersPunch.length > 0) {
+              row.push(record.othersPunch.join(", "));
+            } else {
+              row.push("No entries");
+            }
           }
 
           rows.push(row);
+        } else {
+          // Ligne vide pour les dates sans données
+          const emptyRow = [
+            date,
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+          ];
+
+          if (includeHistory) {
+            emptyRow.push("-");
+          }
+
+          rows.push(emptyRow);
         }
       });
     });
   });
 
   // Crée le contenu CSV
-  const csvContent = [
-    headers.join(","),
-    ...rows.map((row) => row.map(cell => `"${cell}"`).join(",")),
-  ].join("\n");
+  const csvContent = rows.map((row) => row.map(cell => `"${cell}"`).join(",")).join("\n");
 
   // Télécharge le CSV
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -212,65 +263,123 @@ export function exportReportToExcel(
   // Crée un nouveau workbook
   const workbook = utils.book_new();
 
-  // Feuille principale avec les données détaillées
+  // Prépare les données pour la feuille principale organisées par employé
+  const rows: any[][] = [];
+
+  // En-têtes de colonnes
   const headers = [
-    "Department",
-    "Employee ID", 
-    "Employee Name",
     "Date",
     "Scheduled Start",
     "Arrival Time",
     "Departure Time",
     "Delay/Early",
-    "Duration",
+    "Work Time",
     "Punches",
   ];
 
   if (includeHistory) {
-    headers.push("All Time Entries");
+    headers.push("History");
   }
-
-  const rows: any[][] = [headers];
 
   filteredDepartments.forEach((dept) => {
     const employees = employeesByDepartment[dept] || [];
 
     employees.forEach((employee) => {
+      // Ajoute une ligne vide pour séparer les employés (sauf pour le premier)
+      if (rows.length > 0) {
+        rows.push([]);
+      }
+
+      // En-tête de l'employé
+      rows.push([
+        `${employee.firstName.toUpperCase()} - ${employee.department.toUpperCase()}`,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ...(includeHistory ? [""] : [])
+      ]);
+      
+      // Sous-titre avec l'ID de l'employé
+      rows.push([
+        `Employee ID: ${employee.id}`,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ...(includeHistory ? [""] : [])
+      ]);
+
+      // Ligne vide
+      rows.push([]);
+
+      // En-têtes des colonnes pour cet employé
+      rows.push(headers);
+
+      // Données pour chaque date
       filteredDates.forEach((date) => {
         const record = employee.records[date];
 
         if (record) {
+          // Determine scheduled time based on department and arrival time
           const scheduledTime = determineScheduledTime(
             record.arrivalTime,
             date,
             dept,
             employee
           );
-          const { value: delayValue } = calculateDelay(
+
+          // Calculate delay or early arrival
+          const {
+            value: delayValue,
+            isDelay,
+            isOnTime,
+          } = calculateDelay(
             record.arrivalTime,
             scheduledTime,
             dept
           );
 
           const row = [
-            dept,
-            employee.id,
-            employee.firstName,
             date,
-            scheduledTime,
+            scheduledTime !== "-" ? scheduledTime.substring(0, 5) : "-",
             record.arrivalTime,
             record.departureTime,
-            delayValue,
+            isOnTime ? "On time" : delayValue,
             record.duration,
             record.punchCount,
           ];
 
           if (includeHistory) {
-            const timeEntries = employee.allTimeEntries?.[date] || [];
-            row.push(timeEntries.map((entry) => entry.time).join(", "));
+            if (record.othersPunch.length > 0) {
+              row.push(record.othersPunch.join(", "));
+            } else {
+              row.push("No entries");
+            }
           }
 
           rows.push(row);
+        } else {
+          // Ligne vide pour les dates sans données
+          const emptyRow = [
+            date,
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+            "-",
+          ];
+
+          if (includeHistory) {
+            emptyRow.push("-");
+          }
+
+          rows.push(emptyRow);
         }
       });
     });
@@ -278,6 +387,10 @@ export function exportReportToExcel(
 
   // Crée la feuille de données
   const worksheet = utils.aoa_to_sheet(rows);
+
+  // Applique un style aux en-têtes d'employés (optionnel - nécessite des styles Excel)
+  // Note: Pour une mise en forme avancée, il faudrait utiliser une bibliothèque comme exceljs
+  
   utils.book_append_sheet(workbook, worksheet, "Attendance Data");
 
   // Feuille de résumé si les statistiques sont fournies
